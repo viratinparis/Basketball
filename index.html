@@ -1,173 +1,363 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Quick Shot — Basketball Mini-Game</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Basketball Mini-Game with Animated Stickman</title>
 <style>
-  :root{--bg:#0b1220;--card:#0f1724;--accent:#ff6b35;--text:#e6eef8}
-  html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
-  body{background:linear-gradient(180deg,#071029 0%,#05101b 100%);color:var(--text);display:flex;align-items:center;justify-content:center}
-  .wrap{width:960px;max-width:96vw;background:rgba(255,255,255,0.03);padding:18px;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
-  header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
-  h1{font-size:18px;margin:0}
-  .controls{display:flex;gap:8px;align-items:center}
-  button{background:var(--accent);border:none;color:#08121a;padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer}
-  button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.08);color:var(--text);font-weight:600}
-  canvas{background:linear-gradient(180deg,#0b2b1f,#06321f);display:block;border-radius:8px;width:100%;height:520px}
-  .footer{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13px;color:rgba(230,238,248,0.8)}
-  @media (max-width:520px){canvas{height:420px}}
+  body {
+    margin: 0; background: #0b1220; color: #e6eef8;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+  }
+  canvas {
+    background: linear-gradient(180deg, #0b2b1f, #06321f);
+    border-radius: 8px;
+    width: 900px;
+    height: 520px;
+    display: block;
+  }
+  .hud {
+    margin: 10px;
+    font-size: 18px;
+    display: flex;
+    gap: 20px;
+  }
+  button {
+    background: #ff6b35; border: none; color: #08121a;
+    padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Quick Shot — Basketball Mini-Game</h1>
-    <div class="controls">
-      <div id="scoreDisplay">Score: 0</div>
-      <div id="timeDisplay">Time: 30s</div>
-      <button id="startBtn">Start</button>
-      <button id="resetBtn" class="secondary">Reset</button>
-    </div>
-  </header>
-  <canvas id="game"></canvas>
-  <div class="footer">
-    <div>Click or tap anywhere to shoot toward that spot. Score by landing the ball through the hoop.</div>
-    <div>Made for QASMT — share the file or host it to play via URL</div>
+  <div class="hud">
+    <div id="score">Score: 0</div>
+    <div id="timer">Time: 60s</div>
+    <button id="startBtn">Start</button>
   </div>
-</div>
+  <canvas id="game"></canvas>
+
 <script>
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-let W, H;
-function resize(){
-  canvas.width = canvas.clientWidth * devicePixelRatio;
-  canvas.height = canvas.clientHeight * devicePixelRatio;
-  W = canvas.width; H = canvas.height;
-}
-resize();
-window.addEventListener('resize', ()=>{resize(); draw();});
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const DPR = window.devicePixelRatio || 1;
 
-// Game state
-let score = 0; let timeLeft = 30; let running=false; let ball=null; let hoop=null; let timerId=null;
+  // Resize canvas
+  function resize() {
+    canvas.width = canvas.clientWidth * DPR;
+    canvas.height = canvas.clientHeight * DPR;
+  }
+  resize();
+  window.addEventListener('resize', () => {
+    resize();
+    draw();
+  });
 
-function randInt(a,b){return Math.floor(Math.random()*(b-a+1))+a}
+  // Game vars
+  let running = false;
+  let score = 0;
+  let timeLeft = 60;
+  let timerInterval = null;
 
-function startGame(){
-  score=0; timeLeft=30; running=true; ball=null; placeHoop();
-  document.getElementById('scoreDisplay').textContent = 'Score: '+score;
-  document.getElementById('timeDisplay').textContent = 'Time: '+timeLeft+'s';
-  clearInterval(timerId);
-  timerId = setInterval(()=>{
-    timeLeft--; document.getElementById('timeDisplay').textContent = 'Time: '+timeLeft+'s';
-    if(timeLeft<=0){endGame();}
-  },1000);
-}
-function endGame(){ running=false; clearInterval(timerId); alert('Time up! Your score: '+score); }
-function resetGame(){ score=0; timeLeft=30; running=false; ball=null; placeHoop(); document.getElementById('scoreDisplay').textContent='Score: 0'; document.getElementById('timeDisplay').textContent='Time: 30s'; }
+  // Player stickman position & animation state
+  const player = {
+    x: 100 * DPR,
+    y: canvas.height / 1.3,
+    speed: 5 * DPR,
+    vx: 0,
+    vy: 0,
+    moving: false,
+    animFrame: 0,
+    animSpeed: 0.15,
+    facingRight: true,
+    shooting: false,
+  };
 
-function placeHoop(){
-  // place hoop on right half, random vertical position
-  const rw = W*0.12; const rh = H*0.12;
-  hoop = {x: W*0.78, y: randInt(H*0.2,H*0.7), w: rw, h: rh, rimY: null};
-  hoop.rimY = hoop.y + hoop.h*0.25;
-}
-placeHoop();
+  // Ball
+  const ball = {
+    x: player.x,
+    y: player.y - 60 * DPR,
+    r: 12 * DPR,
+    vx: 0,
+    vy: 0,
+    flying: false,
+  };
 
-canvas.addEventListener('pointerdown', (e)=>{
-  if(!running) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) * devicePixelRatio;
-  const y = (e.clientY - rect.top) * devicePixelRatio;
-  // create ball at left-bottom
-  ball = {x: W*0.12, y: H*0.78, vx: (x - W*0.12)/40, vy: (y - H*0.78)/40, r: Math.max(8, W*0.02), life: 200, scored:false};
-});
+  // Hoop
+  const hoop = {
+    x: canvas.width - 150 * DPR,
+    y: canvas.height / 2,
+    w: 80 * DPR,
+    h: 60 * DPR,
+    rimY: null,
+  };
+  hoop.rimY = hoop.y + hoop.h * 0.25;
 
-function physicsStep(){
-  if(ball){
-    // gravity
-    ball.vy += 0.6*devicePixelRatio/2;
-    ball.x += ball.vx; ball.y += ball.vy;
-    ball.life--;
-    // simple floor
-    if(ball.y + ball.r > H*0.95){ ball.y = H*0.95 - ball.r; ball.vy *= -0.4; ball.vx *= 0.9; }
-    // check rim (approx)
-    if(!ball.scored && ball.x > hoop.x && ball.x < hoop.x + hoop.w && ball.y < hoop.rimY + 20*devicePixelRatio){
-      // if ball passes downward through rim area -> score
-      if(ball.vy > 0 && ball.y < hoop.rimY + 6*devicePixelRatio){
-        score++; ball.scored = true; document.getElementById('scoreDisplay').textContent = 'Score: '+score; placeHoop();
+  // Controls state
+  const keys = {};
+
+  window.addEventListener('keydown', (e) => {
+    keys[e.key.toLowerCase()] = true;
+
+    if(e.key === ' ' && running && !ball.flying) {
+      shootBall();
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    keys[e.key.toLowerCase()] = false;
+  });
+
+  function shootBall() {
+    if (ball.flying) return;
+    player.shooting = true;
+    ball.flying = true;
+    // Shoot ball towards hoop rim with arc
+    const dx = hoop.x + hoop.w * 0.5 - ball.x;
+    const dy = hoop.rimY - ball.y;
+    const speedFactor = 0.15 * DPR;
+    ball.vx = dx * speedFactor;
+    ball.vy = dy * speedFactor - 6 * DPR;
+  }
+
+  function updatePlayer() {
+    player.vx = 0;
+    player.vy = 0;
+    player.moving = false;
+
+    if(keys['w']) { player.vy = -player.speed; player.moving = true; }
+    if(keys['s']) { player.vy = player.speed; player.moving = true; }
+    if(keys['a']) { player.vx = -player.speed; player.moving = true; player.facingRight = false; }
+    if(keys['d']) { player.vx = player.speed; player.moving = true; player.facingRight = true; }
+
+    player.x += player.vx;
+    player.y += player.vy;
+
+    // Clamp inside canvas
+    player.x = Math.min(Math.max(40 * DPR, player.x), canvas.width - 40 * DPR);
+    player.y = Math.min(Math.max(120 * DPR, player.y), canvas.height - 40 * DPR);
+
+    // Ball follows player if not flying
+    if(!ball.flying) {
+      ball.x = player.x + (player.facingRight ? 20 * DPR : -20 * DPR);
+      ball.y = player.y - 60 * DPR;
+    }
+
+    // Animate walking
+    if(player.moving && !player.shooting) {
+      player.animFrame += player.animSpeed;
+      if(player.animFrame > 3) player.animFrame = 0;
+    } else {
+      player.animFrame = 0;
+    }
+  }
+
+  function updateBall() {
+    if(ball.flying) {
+      // Gravity
+      ball.vy += 0.3 * DPR;
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Bounce floor
+      if(ball.y + ball.r > canvas.height) {
+        ball.y = canvas.height - ball.r;
+        ball.vy *= -0.4;
+        ball.vx *= 0.6;
+      }
+
+      // Check scoring: ball passes rim downward within rim horizontal range
+      if(ball.x > hoop.x && ball.x < hoop.x + hoop.w &&
+         ball.y > hoop.rimY - 10 * DPR && ball.y < hoop.rimY + 10 * DPR &&
+         ball.vy > 0) {
+        score++;
+        document.getElementById('score').textContent = 'Score: ' + score;
+        resetBallAndPlayer();
+      }
+
+      // Reset ball if almost stopped
+      if(Math.abs(ball.vx) < 0.5 && Math.abs(ball.vy) < 0.5 && ball.y + ball.r >= canvas.height) {
+        resetBallAndPlayer();
       }
     }
-    if(ball.life <=0) ball = null;
   }
-}
 
-function drawHoop(){
-  if(!hoop) return;
-  ctx.save();
-  // backboard
-  const bw = hoop.w*0.25; const bh = hoop.h*0.22;
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(hoop.x - bw - 8*devicePixelRatio, hoop.y - bh/2, bw, bh);
-  // rim
-  ctx.beginPath(); ctx.lineWidth = 6*devicePixelRatio; ctx.strokeStyle = '#ff6b35';
-  ctx.arc(hoop.x + hoop.w*0.12, hoop.rimY, hoop.w*0.22, 0, Math.PI*2); ctx.stroke();
-  ctx.restore();
-}
+  function resetBallAndPlayer() {
+    ball.flying = false;
+    player.shooting = false;
+    ball.vx = 0;
+    ball.vy = 0;
+    ball.x = player.x + (player.facingRight ? 20 * DPR : -20 * DPR);
+    ball.y = player.y - 60 * DPR;
+  }
 
-function drawBall(){
-  if(!ball) return;
-  ctx.save();
-  ctx.beginPath(); ctx.fillStyle = '#ff9f1c'; ctx.lineWidth=2*devicePixelRatio;
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle='#b35914'; ctx.stroke();
-  // lines
-  ctx.beginPath(); ctx.moveTo(ball.x-ball.r*0.6, ball.y); ctx.quadraticCurveTo(ball.x, ball.y+ball.r*0.6, ball.x+ball.r*0.6, ball.y); ctx.strokeStyle='rgba(0,0,0,0.15)'; ctx.stroke();
-  ctx.restore();
-}
+  // Draw stickman parts with simple animation frames
+  function drawPlayer() {
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    if(!player.facingRight) ctx.scale(-1,1);
 
-function drawCourt(){
-  // floor gradient
-  const g = ctx.createLinearGradient(0,H*0.6,0,H);
-  g.addColorStop(0,'rgba(0,0,0,0.05)'); g.addColorStop(1,'rgba(0,0,0,0.25)');
-  ctx.fillStyle = g; ctx.fillRect(0,H*0.6,W,H*0.4);
-  // center line
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 2*devicePixelRatio;
-  ctx.beginPath(); ctx.moveTo(W*0.5,H*0.6); ctx.lineTo(W*0.5,H); ctx.stroke();
-}
+    // Body
+    ctx.strokeStyle = '#ff6b35';
+    ctx.lineWidth = 8 * DPR;
+    ctx.lineCap = 'round';
 
-function draw(){
-  // clear
-  ctx.clearRect(0,0,W,H);
-  // sky / background
-  const bg = ctx.createLinearGradient(0,0,0,H);
-  bg.addColorStop(0,'#072938'); bg.addColorStop(1,'#0b2b1f'); ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
-  // court
-  drawCourt();
-  // hoop
-  drawHoop();
-  // ball
-  drawBall();
-  // HUD
-  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(W*0.02, H*0.02, W*0.28, H*0.09);
-  requestAnimationFrame(()=>{if(running) {physicsStep();} draw();});
-}
+    // Head
+    ctx.beginPath();
+    ctx.arc(0, -60 * DPR, 15 * DPR, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff6b35';
+    ctx.fill();
+    ctx.stroke();
 
-// initial draw loop
-draw();
+    // Body line
+    ctx.beginPath();
+    ctx.moveTo(0, -45 * DPR);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
 
-// UI
-document.getElementById('startBtn').addEventListener('click', ()=>{ if(!running) startGame(); else endGame(); document.getElementById('startBtn').textContent = running ? 'Stop' : 'Start'; });
-document.getElementById('resetBtn').addEventListener('click', ()=>{ resetGame(); document.getElementById('startBtn').textContent='Start'; });
+    // Arms animation: swing back and forth (walking) or shooting pose
+    ctx.beginPath();
+    if(player.shooting) {
+      // Shooting: right arm forward, left arm back
+      ctx.moveTo(0, -40 * DPR);
+      ctx.lineTo(25 * DPR, -55 * DPR); // shooting arm
+      ctx.moveTo(0, -40 * DPR);
+      ctx.lineTo(-20 * DPR, -55 * DPR);
+    } else {
+      // Walking arms swing with animFrame (0 to 3)
+      const swing = Math.sin(player.animFrame * Math.PI * 2) * 15 * DPR;
+      ctx.moveTo(0, -40 * DPR);
+      ctx.lineTo(20 * DPR, -40 * DPR + swing);
+      ctx.moveTo(0, -40 * DPR);
+      ctx.lineTo(-20 * DPR, -40 * DPR - swing);
+    }
+    ctx.stroke();
 
-// helpful note: let user press space to shoot toward center
-window.addEventListener('keydown', (e)=>{ if(e.code==='Space' && running){ const x = W*0.55; const y = H*0.5; ball = {x: W*0.12, y: H*0.78, vx: (x - W*0.12)/40, vy: (y - H*0.78)/40, r: Math.max(8, W*0.02), life: 200, scored:false}; }
-});
+    // Legs animation: swing with animFrame
+    ctx.beginPath();
+    const legSwing = Math.sin(player.animFrame * Math.PI * 2) * 20 * DPR;
+    ctx.moveTo(0, 0);
+    ctx.lineTo(15 * DPR, legSwing);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-15 * DPR, -legSwing);
+    ctx.stroke();
 
-// touch-friendly pointer capture
-canvas.style.touchAction = 'manipulation';
+    ctx.restore();
+  }
 
-// initial placement
-resetGame();
+  function drawBall() {
+    ctx.save();
+    ctx.fillStyle = '#ff9f1c';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#b35914';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ball.x - ball.r * 0.6, ball.y);
+    ctx.quadraticCurveTo(ball.x, ball.y + ball.r * 0.6, ball.x + ball.r * 0.6, ball.y);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawHoop() {
+    ctx.save();
+
+    // Backboard
+    const bw = hoop.w * 0.25;
+    const bh = hoop.h * 0.22;
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(hoop.x - bw - 8, hoop.y - bh / 2, bw, bh);
+
+    // Rim
+    ctx.beginPath();
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#ff6b35';
+    ctx.arc(hoop.x + hoop.w * 0.12, hoop.rimY, hoop.w * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawCourt() {
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // floor gradient
+    const g = ctx.createLinearGradient(0, H * 0.6, 0, H);
+    g.addColorStop(0, 'rgba(0,0,0,0.05)');
+    g.addColorStop(1, 'rgba(0,0,0,0.25)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H * 0.6, W, H * 0.4);
+
+    // center line
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(W * 0.5, H * 0.6);
+    ctx.lineTo(W * 0.5, H);
+    ctx.stroke();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // background
+    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, '#072938');
+    bg.addColorStop(1, '#0b2b1f');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawCourt();
+    drawHoop();
+    drawPlayer();
+    drawBall();
+
+    if(running) {
+      updatePlayer();
+      updateBall();
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  function startGame() {
+    if(running) return;
+    running = true;
+    score = 0;
+    timeLeft = 60;
+    document.getElementById('score').textContent = 'Score: 0';
+    document.getElementById('timer').textContent = 'Time: 60s';
+    resetBallAndPlayer();
+
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      document.getElementById('timer').textContent = `Time: ${timeLeft}s`;
+      if(timeLeft <= 0) {
+        running = false;
+        clearInterval(timerInterval);
+        alert(`Time's up! Your score: ${score}`);
+      }
+    }, 1000);
+  }
+
+  document.getElementById('startBtn').addEventListener('click', () => {
+    if(running) {
+      running = false;
+      clearInterval(timerInterval);
+      document.getElementById('startBtn').textContent = 'Start';
+    } else {
+      startGame();
+      document.getElementById('startBtn').textContent = 'Stop';
+    }
+  });
+
+  draw();
+})();
 </script>
 </body>
 </html>
